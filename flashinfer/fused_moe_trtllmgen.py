@@ -15,14 +15,14 @@ limitations under the License.
 """
 
 import functools
+from enum import IntEnum
 from types import SimpleNamespace
 from typing import Dict, List, Optional, Tuple
-from enum import IntEnum
 
 import torch
 
-from .fp4_quantization import block_scale_interleave
 from .autotuner import AutoTuner, TunableRunner, TuningConfig
+from .fp4_quantization import block_scale_interleave
 from .jit import JitSpec
 from .jit import env as jit_env
 from .jit import gen_jit_spec, sm100a_nvcc_flags
@@ -33,15 +33,15 @@ from .utils import register_custom_op, register_fake_op
 # Please keep this in sync with the counterpart defined in cpp/tensorrt_llm/kernels/trtllmGenKernels/blockScaleMoe/runner.h
 class RoutingMethodType(IntEnum):
     # Default: Softmax -> TopK
-    Default = 0,
+    Default = (0,)
     # Renormalize: TopK -> Softmax
-    Renormalize = 1,
+    Renormalize = (1,)
     # DeepSeekV3: Sigmoid -> RoutingBiasAdd -> Top2 in group -> Top4 groups -> Top8 experts from the Top4 groups
-    DeepSeekV3 = 2,
+    DeepSeekV3 = (2,)
     # Llama4: Top1 -> Sigmoid
-    Llama4 = 3,
+    Llama4 = (3,)
     # Qwen3: Softmax -> TopK -> Renormalize
-    RenormalizeNaive = 4,
+    RenormalizeNaive = (4,)
     # Unspecified
     Unspecified = 5
 
@@ -65,12 +65,16 @@ float4_e2m1x2 = FLOAT4_E2M1X2
 float4_sf_dtype = SF_DTYPE
 fp4_buckets = FP4_BUCKETS
 
-__all__ = ['float4_e2m1x2', 'float4_sf_dtype', 'pad_up', 'fp4_buckets']
+__all__ = ["float4_e2m1x2", "float4_sf_dtype", "pad_up", "fp4_buckets"]
 
 
 def gen_fused_moe_sm100_module() -> JitSpec:
-    debug_cubin_path = jit_env.FLASHINFER_CSRC_DIR / "nv_internal/tensorrt_llm/kernels/trtllmgen_kernels/batchedGemm/trtllmGen_bmm_export/cubins"
+    debug_cubin_path = (
+        jit_env.FLASHINFER_CSRC_DIR
+        / "nv_internal/tensorrt_llm/kernels/trtllmgen_kernels/batchedGemm/trtllmGen_bmm_export/cubins"
+    )
     import glob
+
     debug_cubin_files = glob.glob(str(debug_cubin_path / "Bmm_*.cpp"))
 
     return gen_jit_spec(
@@ -93,7 +97,8 @@ def gen_fused_moe_sm100_module() -> JitSpec:
             / "nv_internal/tensorrt_llm/kernels/trtllmgen_kernels/blockScaleMoe/RoutingKernel.cu",
             jit_env.FLASHINFER_CSRC_DIR
             / "nv_internal/tensorrt_llm/kernels/trtllmgen_kernels/blockScaleMoe/runner.cu",
-        ] + debug_cubin_files,
+        ]
+        + debug_cubin_files,
         extra_cuda_cflags=sm100a_nvcc_flags
         + [
             "-DENABLE_BF16",
@@ -111,9 +116,25 @@ def gen_fused_moe_sm100_module() -> JitSpec:
         extra_include_paths=[
             jit_env.FLASHINFER_CSRC_DIR / "nv_internal",
             jit_env.FLASHINFER_CSRC_DIR / "nv_internal" / "include",
-            jit_env.FLASHINFER_CSRC_DIR / "nv_internal" / "tensorrt_llm" / "kernels" / "trtllmgen_kernels" / "batchedGemm",
-            jit_env.FLASHINFER_CSRC_DIR / "nv_internal" / "tensorrt_llm" / "kernels" / "trtllmgen_kernels" / "batchedGemm" / "trtllmGen_bmm_export",
-            jit_env.FLASHINFER_CSRC_DIR / "nv_internal" / "tensorrt_llm" / "kernels" / "trtllmgen_kernels" / "blockScaleMoe",
+            jit_env.FLASHINFER_CSRC_DIR
+            / "nv_internal"
+            / "tensorrt_llm"
+            / "kernels"
+            / "trtllmgen_kernels"
+            / "batchedGemm",
+            jit_env.FLASHINFER_CSRC_DIR
+            / "nv_internal"
+            / "tensorrt_llm"
+            / "kernels"
+            / "trtllmgen_kernels"
+            / "batchedGemm"
+            / "trtllmGen_bmm_export",
+            jit_env.FLASHINFER_CSRC_DIR
+            / "nv_internal"
+            / "tensorrt_llm"
+            / "kernels"
+            / "trtllmgen_kernels"
+            / "blockScaleMoe",
         ],
     )
 
@@ -148,9 +169,9 @@ def get_fused_moe_sm100_module():
         routed_scaling_factor: float,
         tile_tokens_dim: int,
         routing_method_type: int,
-        do_finalize: bool
+        do_finalize: bool,
     ) -> torch.Tensor:
-        
+
         output = module.fp4_block_scale_moe_runner(
             routing_logits,
             routing_bias,
@@ -173,7 +194,7 @@ def get_fused_moe_sm100_module():
             routed_scaling_factor,
             tile_tokens_dim,
             routing_method_type,
-            do_finalize
+            do_finalize,
         )
 
         return output
@@ -201,7 +222,7 @@ def get_fused_moe_sm100_module():
         routed_scaling_factor: float,
         tile_tokens_dim: int,
         routing_method_type: int,
-        do_finalize: bool
+        do_finalize: bool,
     ):
         seq_len = hidden_states.shape[0]
         hidden_size = hidden_states.shape[1]
@@ -241,8 +262,8 @@ def get_reorder_rows_for_gated_act_gemm_row_indices(x) -> torch.Tensor:
 
     # We split into top half and bottom half, but if M is odd,
     # the bottom half is one row larger.
-    top = row_indices[:(M + 1) // 2]  # round up
-    bot = row_indices[(M + 1) // 2:]  # remainder
+    top = row_indices[: (M + 1) // 2]  # round up
+    bot = row_indices[(M + 1) // 2 :]  # remainder
 
     # Create the output
     permuted_row_indices = torch.empty_like(row_indices)
@@ -297,25 +318,28 @@ def get_shuffle_block_size(epilogue_tile_m: int) -> int:
     return shuffle_block_size
 
 
-def get_shuffle_matrix_a_row_indices(input_tensor: torch.Tensor,
-                                     epilogue_tile_m: int) -> torch.Tensor:
+def get_shuffle_matrix_a_row_indices(
+    input_tensor: torch.Tensor, epilogue_tile_m: int
+) -> torch.Tensor:
     """
     Higher-level PyTorch approach to reorder the rows in blocks of size 16 or 32.
     - We do NOT try to handle custom e2m1 memory usage (i.e. no 'K/2' bytes).
     - Instead, we purely reorder rows in a standard PyTorch shape [M, K].
     """
-    assert input_tensor.dim(
-    ) == 2, f"input_tensor should be a 2D tensor, not {input_tensor.dim()}"
+    assert (
+        input_tensor.dim() == 2
+    ), f"input_tensor should be a 2D tensor, not {input_tensor.dim()}"
 
     # M, K from the input
     M, K = input_tensor.shape
 
     # Choose block size 16 or 32
     shuffle_block_size = get_shuffle_block_size(epilogue_tile_m)
-    row_map = (srcToDstBlk16RowMap
-               if shuffle_block_size == 16 else srcToDstBlk32RowMap)
+    row_map = srcToDstBlk16RowMap if shuffle_block_size == 16 else srcToDstBlk32RowMap
 
-    assert M % shuffle_block_size == 0, f"input_tensor.shape[0] must be multiples of {shuffle_block_size}"
+    assert (
+        M % shuffle_block_size == 0
+    ), f"input_tensor.shape[0] must be multiples of {shuffle_block_size}"
 
     # row_indices[new_row] = old_row
     # so row_indices is an array of size M telling us from which old_row
@@ -334,35 +358,32 @@ def get_shuffle_matrix_a_row_indices(input_tensor: torch.Tensor,
     return row_indices
 
 
-def shuffle_matrix_a(input_tensor: torch.Tensor,
-                     epilogue_tile_m: int) -> torch.Tensor:
+def shuffle_matrix_a(input_tensor: torch.Tensor, epilogue_tile_m: int) -> torch.Tensor:
     """
     PyTorch equivalent of trtllm-gen `shuffleMatrixA`
     """
-    row_indices = get_shuffle_matrix_a_row_indices(input_tensor,
-                                                   epilogue_tile_m)
+    row_indices = get_shuffle_matrix_a_row_indices(input_tensor, epilogue_tile_m)
 
     return input_tensor[row_indices.to(input_tensor.device)]
 
 
 def get_shuffle_matrix_sf_a_row_indices(
-        input_tensor: torch.Tensor,
-        epilogue_tile_m: int,
-        num_elts_per_sf: int = 16) -> torch.Tensor:
+    input_tensor: torch.Tensor, epilogue_tile_m: int, num_elts_per_sf: int = 16
+) -> torch.Tensor:
 
     assert input_tensor.dtype == float4_sf_dtype
     assert num_elts_per_sf == 16
 
-    assert input_tensor.dim(
-    ) == 2, f"input_tensor should be a 2D tensor, not {input_tensor.dim()}"
+    assert (
+        input_tensor.dim() == 2
+    ), f"input_tensor should be a 2D tensor, not {input_tensor.dim()}"
 
     # M, K from the input
     M, K = input_tensor.shape
     assert M % 128 == 0
     assert K % 4 == 0
 
-    row_indices = get_shuffle_matrix_a_row_indices(input_tensor,
-                                                   epilogue_tile_m)
+    row_indices = get_shuffle_matrix_a_row_indices(input_tensor, epilogue_tile_m)
 
     return row_indices
 
@@ -383,8 +404,7 @@ def shuffle_matrix_sf_a(
     This function doesn't add padding.
     """
 
-    row_indices = get_shuffle_matrix_sf_a_row_indices(input_tensor,
-                                                      epilogue_tile_m)
+    row_indices = get_shuffle_matrix_sf_a_row_indices(input_tensor, epilogue_tile_m)
 
     w_shuffled = input_tensor[row_indices.to(input_tensor.device)]
 
@@ -416,7 +436,7 @@ def fused_moe_trtllmgen(
     routed_scaling_factor: float,
     tile_tokens_dim: int,
     routing_method_type: int,
-    do_finalize: bool
+    do_finalize: bool,
 ) -> torch.Tensor:
     return get_fused_moe_sm100_module().fused_moe_trtllmgen_sm100(
         routing_logits,
@@ -440,5 +460,5 @@ def fused_moe_trtllmgen(
         routed_scaling_factor,
         tile_tokens_dim,
         routing_method_type,
-        do_finalize
+        do_finalize,
     )
